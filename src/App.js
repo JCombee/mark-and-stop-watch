@@ -1,170 +1,109 @@
 import React from 'react';
 import './App.css';
-import NoSleep from 'nosleep.js';
+import Menu from "./Menu";
+import Stopwatch from "./Stopwatch";
 
 class App extends React.Component {
     state = {
-        time: 0,
-        markers: []
+        stopwatches: [],
+        currentTime: undefined
     };
 
-    setMarker() {
-        if (!this.state.markers.every((marker) => marker.time !== this.state.time)) {
-            return;
-        }
+    constructor(param) {
+        super(param);
 
-        this.setState({
-            markers: [...this.state.markers, {time: this.state.time, message: ''}]
-        }, () => {
-            document.getElementById('markers').scrollTo(0, document.getElementById('markers').scrollHeight);
-            localStorage.setItem('markers', JSON.stringify(this.state.markers));
-        });
-    }
+        this.goToStopwatch = this.goToStopwatch.bind(this);
+        this.deleteStopwatch = this.deleteStopwatch.bind(this);
+        this.makeNewStopwatch = this.makeNewStopwatch.bind(this);
 
-    constructor(props) {
-        super(props);
-
-        this.setTime = this.setTime.bind(this);
-        this.resetClock = this.resetClock.bind(this);
-        this.setMarker = this.setMarker.bind(this);
+        this.closeStopwatch = this.closeStopwatch.bind(this);
+        this.setMarkerOnStopwatch = this.setMarkerOnStopwatch.bind(this);
+        this.setTimeOnStopwatch = this.setTimeOnStopwatch.bind(this);
     }
 
     componentDidMount() {
-        this.noSleep = new NoSleep();
-        const startTime = localStorage.getItem('startTime');
-        if (startTime) {
-            this.startClock(new Date(startTime));
-        }
-        const markers = localStorage.getItem('markers');
-        if (markers) {
-            this.setState({
-                markers: JSON.parse(markers)
-            })
+        const stopwatchesState = localStorage.getItem('stopwatches');
+        if (stopwatchesState) {
+            this.setState(JSON.parse(stopwatchesState));
         }
     }
 
-    startClock(time) {
-        this.noSleep.enable();
-
-        this.setState({
-            startTime: time
-        }, () => {
-            localStorage.setItem('startTime', this.state.startTime);
-            this.setState({
-                time: Math.round((new Date() - this.state.startTime))
-            });
-            this.interval = setInterval(() => {
-                this.setState({
-                    time: Math.round((new Date() - this.state.startTime))
-                });
-            }, 1000);
-        });
+    setStateAndStore(param) {
+        this.setState(param, () => localStorage.setItem('stopwatches', JSON.stringify(this.state)));
     }
 
-    setTime() {
-        const hours = document.getElementById('hours').value * 60 * 60 * 1000;
-        const minutes = document.getElementById('minutes').value * 60 * 1000;
-        const seconds = document.getElementById('seconds').value * 1000;
-        this.startClock(new Date() - hours - minutes - seconds);
+    goToStopwatch(time) {
+        this.setStateAndStore({currentTime: time});
     }
 
-    resetClock() {
-        if (!window.confirm('Weet je het zeker?')) {
+    deleteStopwatch(time) {
+        if (!window.confirm('Are you sure you want to delete this timer?')) {
             return;
         }
-        this.noSleep.disable();
-        clearInterval(this.interval);
-        this.interval = undefined;
-        this.setState({
-            startTime: undefined,
-            markers: []
-        }, () => {
-            localStorage.removeItem('startTime');
-            localStorage.removeItem('markers');
+        this.setStateAndStore({stopwatches: this.state.stopwatches.filter((stopwatch) => stopwatch.time !== time)});
+    }
+
+    setMarkerOnStopwatch(stopwatch, time, checked = false, message = '') {
+        const marker = {time, checked, message};
+        const stopwatches = this.state.stopwatches.filter((s) => s.time !== stopwatch.time);
+        return new Promise((resolve) => {
+            let index = stopwatch.markers.findIndex((m) => m.time === time);
+            if (index === -1) {
+                index = stopwatch.markers.length;
+            }
+            this.setStateAndStore({
+                stopwatches: [{
+                    time: stopwatch.time,
+                    markers: [...stopwatch.markers.slice(0, index), marker, ...stopwatch.markers.slice(index + 1)]
+                }, ...stopwatches]
+            }, resolve);
         });
+    }
+
+    setTimeOnStopwatch(stopwatch, time) {
+        const stopwatches = this.state.stopwatches.filter((s) => s.time !== stopwatch.time);
+        return new Promise((resolve) => {
+            this.setStateAndStore({
+                currentTime: this.state.currentTime === stopwatch.time ? time : stopwatch.time,
+                stopwatches: [{
+                    time: time,
+                    markers: stopwatch.markers
+                }, ...stopwatches]
+            }, resolve);
+        });
+    }
+
+    makeNewStopwatch() {
+        const stopwatch = {
+            time: new Date().getTime(),
+            markers: []
+        };
+        this.setStateAndStore({currentTime: stopwatch.time, stopwatches: [...this.state.stopwatches, stopwatch]});
+    }
+
+    closeStopwatch() {
+        this.setStateAndStore({currentTime: undefined});
     }
 
     render() {
+        if (!this.state.currentTime) {
+            return (
+                <Menu
+                    stopwatches={this.state.stopwatches}
+                    goToTime={this.goToStopwatch}
+                    deleteTime={this.deleteStopwatch}
+                    makeNewTime={this.makeNewStopwatch}
+                />
+            );
+        }
         return (
-            <div style={{display: 'flex', flexDirection: 'column', height: '100%'}}>
-                <div>
-                    {this.state.startTime ? (
-                        this.formatTime(this.state.time)
-                    ) : (
-                        <button type="button" className="btn btn-success btn-lg btn-block"
-                                onClick={() => this.startClock(new Date())}>Start Clock</button>
-                    )}
-                </div>
-                <div style={{height: '100%', overflowY: 'scroll'}} id="markers">
-                    {this.state.markers.map((marker) => (
-                        <div className="input-group flex-nowrap">
-                            <div className="input-group-prepend">
-                                <span className="input-group-text">{this.formatTime(marker.time)}</span>
-                            </div>
-                            <input type="text" className="form-control"
-                                   aria-describedby="addon-wrapping"
-                                   onChange={(event) => this.setMessage(marker.time, event.target.value)}/>
-                        </div>
-                    ))}
-                </div>
-                <div>
-                    <button type="button" className="btn btn-info btn-lg btn-block" onClick={this.setMarker}>Set
-                        Marker
-                    </button>
-                </div>
-                <div>
-                    <button type="button" className="btn btn-danger btn-lg btn-block" onClick={this.resetClock}>Reset
-                    </button>
-                </div>
-                {this.state.setTime || (
-                    <div>
-                        <button type="button" className="btn btn-primary btn-lg btn-block"
-                                onClick={() => this.setState({setTime: true})}>Set Time
-                        </button>
-                    </div>
-                )}
-                {this.state.setTime && (
-                    <div>
-                        <div className="input-group">
-                            <div className="custom-file">
-                                <input type="number" className="form-control"
-                                       aria-describedby="inputGroupFileAddon04" id="hours"/>
-                            </div>
-                            <span className="input-group-text">:</span>
-                            <div className="custom-file">
-                                <input type="number" className="form-control"
-                                       aria-describedby="inputGroupFileAddon04" id="minutes"/>
-                            </div>
-                            <span className="input-group-text">:</span>
-                            <div className="custom-file">
-                                <input type="number" className="form-control"
-                                       aria-describedby="inputGroupFileAddon04" id="seconds"/>
-                            </div>
-                            <div className="input-group-append">
-                                <button className="btn btn-outline-secondary" type="button"
-                                        id="inputGroupFileAddon04" onClick={this.setTime}>Set
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                )}
-            </div>
+            <Stopwatch
+                stopwatch={this.state.stopwatches.find((stopwatch) => stopwatch.time === this.state.currentTime)}
+                closeStopwatch={this.closeStopwatch}
+                setMarkerOnStopwatch={this.setMarkerOnStopwatch}
+                setTimeOnStopwatch={this.setTimeOnStopwatch}
+            />
         );
-    }
-
-    formatTime(time) {
-        const hours = Math.round(time / 1000 / 60 / 60) % 60;
-        const minutes = Math.round(time / 1000 / 60) % 60;
-        const seconds = Math.round(time / 1000) % 60;
-        return ('0' + hours).substr(-2) + ':' + ('0' + minutes).substr(-2) + ':' + ('0' + seconds).substr(-2);
-    }
-
-    setMessage(time, value) {
-        const markers = [...this.state.markers];
-        markers.find((marker) => marker.time === time).message = value;
-        this.setState({
-            markers
-        }, () => localStorage.setItem('markers', JSON.stringify(markers)));
     }
 }
 
